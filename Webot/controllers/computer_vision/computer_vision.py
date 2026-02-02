@@ -2,7 +2,21 @@ from controller import Robot, Display
 from Basic_Pixel_Processing import gray_scale, gaussian_blur, edge_detection, hysteresis, normalize
 from Blob import blobize, histogram_distance
 import numpy as np
+from PIL import Image
 import time
+
+# Load in the goal
+goal_image = Image.open("goal.jpg") # Open the image file
+goal_array = np.array(goal_image)
+
+# Find the blob of the goal
+gray_goal = gray_scale(goal_array, method='luminosity') # Convert to Grayscale
+blurred_goal = gaussian_blur(gray_goal) # Apply Gaussian Blur
+edges_goal = edge_detection(blurred_goal) # Perform Edge Detection
+normalized_goal = normalize(edges_goal) # Normalize edges to range 0-255 for hysteresis
+hysteresis_goal = hysteresis(normalized_goal, weak=30, strong=100) # Apply Hysteresis Thresholding
+
+goal_blob = blobize(goal_array,hysteresis_goal)[1]
 
 # Initialize Robot
 robot = Robot()
@@ -15,7 +29,7 @@ width = camera.getWidth()
 height = camera.getHeight()
 
 # Setup Display
-display = robot.getDevice("output_display")
+display = robot.getDevice("display")
 
 print("Vision system started...")
 
@@ -63,7 +77,7 @@ def contains_pixels(blob, array):
     
     # Calculate percentage
     percentage = (count / len(blob.pixels)) * 100
-    return percentage > 15
+    return percentage > 25
 
 # --- Main Loop ---
 while robot.step(timestep) != -1:
@@ -106,10 +120,17 @@ while robot.step(timestep) != -1:
     diff_array = normalize(diff_array) # Normalize to range 0-255
     thresholded_diff_array = hysteresis(diff_array, weak=30, strong=100)
 
-    # --- Highlight Moving Blobs ---
+    # --- Highlight Moving Blobs and Goal ---
     processed_img = current_frame_arr.copy()
     for i, blob_pair in enumerate(Blobs):
-        if contains_pixels(blob_pair[0],thresholded_diff_array) and contains_pixels(blob_pair[1],thresholded_diff_array):
+        hc_distance = histogram_distance(blob_pair[1].color_histogram, goal_blob.color_histogram)
+        hog_distance = histogram_distance(blob_pair[1].hog_descriptor, goal_blob.hog_descriptor)
+        if hc_distance + hog_distance < 1:
+            # print(f"Blob {i+1} is goal")
+            for x, y in blob_pair[1].pixels:
+                # Highlight in red
+                processed_img[y, x] = [0, 255, 0]  # RGB Green
+        elif contains_pixels(blob_pair[0],thresholded_diff_array) and contains_pixels(blob_pair[1],thresholded_diff_array):
             for x, y in blob_pair[1].pixels:
                 # Highlight in red
                 processed_img[y, x] = [255, 0, 0]  # RGB Red
@@ -140,3 +161,4 @@ while robot.step(timestep) != -1:
     # Maintain ~30 FPS
     if time.time() - t < 1/30:
         time.sleep((1/30) - (time.time() - t))
+   

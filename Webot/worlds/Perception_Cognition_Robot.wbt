@@ -1,0 +1,71 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/BakelitePlastic.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.15987752956377202 0.5197544951764769 -0.8392225213162661 0.837899136221389
+  position -0.9356142278341895 0.9577812903987604 0.8547862460323665
+}
+Background {
+  skyColor [
+    0.4 0.7 1
+  ]
+}
+RectangleArena {
+  floorAppearance BakelitePlastic {
+  }
+  wallHeight 0.2
+  wallAppearance BakelitePlastic {
+  }
+}
+E-puck {
+  hidden position_0_0 1.515003116469328e-08
+  hidden position_0_1 7.716340017186334e-08
+  hidden translation_1 0 0.026000000000000006 0.02
+  hidden rotation_1 0 1 0 0
+  hidden translation_2 0 -0.026000000000000002 0.02
+  hidden rotation_2 0 1 0 7.884953353001448e-08
+  translation -0.019855700016198716 -4.560240432026511e-11 -6.396199577943414e-05
+  rotation 0.7391445416447258 0.06870145165966125 0.6700339223477147 6.664894577793497e-09
+  controller "computer_vision"
+  camera_width 100
+  camera_height 75
+  turretSlot [
+    Display {
+      width 100
+      height 75
+    }
+  ]
+}
+DEF Goal Solid {
+  translation 0.38 -0.08 0.05
+  children [
+    Shape {
+      appearance PBRAppearance {
+        metalness 0
+      }
+      geometry Cone {
+        bottomRadius 0.05
+        height 0.1
+      }
+    }
+  ]
+}
+Solid {
+  translation 0.37 0.06 0.07
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0 0 1
+      }
+      geometry Sphere {
+        radius 0.03
+      }
+    }
+  ]
+  name "solid(1)"
+}
