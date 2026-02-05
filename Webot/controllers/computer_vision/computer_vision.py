@@ -77,7 +77,7 @@ def contains_pixels(blob, array):
     
     # Calculate percentage
     percentage = (count / len(blob.pixels)) * 100
-    return percentage > 15
+    return percentage > 1
 
 # --- Main Loop ---
 while robot.step(timestep) != -1:
@@ -100,10 +100,10 @@ while robot.step(timestep) != -1:
     
     # --- Compare Blobs ---
     Blobs = []
-    for i, blob in enumerate(prev_frame_blobs):
+    for i, blob in enumerate(current_frame_blobs):
         best_distance = float('inf')
         best_match = -1
-        for j, other_blob in enumerate(current_frame_blobs):       
+        for j, other_blob in enumerate(prev_frame_blobs):       
             # The normalization now happens automatically inside the distance function
             hc_distance = histogram_distance(blob.color_histogram, other_blob.color_histogram)
             hog_distance = histogram_distance(blob.hog_descriptor, other_blob.hog_descriptor)
@@ -113,7 +113,7 @@ while robot.step(timestep) != -1:
                 best_distance = total_distance
                 best_match = j
         # print(f"Blob {i+1} in frame 1 is Blob {best_match+1} in frame 2")
-        Blobs.append((blob, current_frame_blobs[best_match]))
+        Blobs.append((blob, prev_frame_blobs[best_match]))
 
     # --- Compare Frames ---
     diff_array = np.abs(blurred_current_frame - blurred_prev_frame) # Background Subtraction
@@ -123,15 +123,15 @@ while robot.step(timestep) != -1:
     # --- Highlight Moving Blobs and Goal ---
     processed_img = current_frame_arr.copy()
     for i, blob_pair in enumerate(Blobs):
-        hc_distance = histogram_distance(blob_pair[1].color_histogram, goal_blob.color_histogram)
-        hog_distance = histogram_distance(blob_pair[1].hog_descriptor, goal_blob.hog_descriptor)
+        hc_distance = histogram_distance(blob_pair[0].color_histogram, goal_blob.color_histogram)
+        hog_distance = histogram_distance(blob_pair[0].hog_descriptor, goal_blob.hog_descriptor)
         if hc_distance + hog_distance < 1:
             # print(f"Blob {i+1} is goal")
-            for x, y in blob_pair[1].pixels:
-                # Highlight in red
+            for x, y in blob_pair[0].pixels:
+                # Highlight in green
                 processed_img[y, x] = [0, 255, 0]  # RGB Green
-        elif contains_pixels(blob_pair[0],thresholded_diff_array) and contains_pixels(blob_pair[1],thresholded_diff_array):
-            for x, y in blob_pair[1].pixels:
+        elif contains_pixels(blob_pair[0],thresholded_diff_array) and contains_pixels(blob_pair[1],thresholded_diff_array) and np.sqrt((blob_pair[0].center[0]-blob_pair[1].center[0])**2 + (blob_pair[0].center[1]-blob_pair[1].center[1])**2) > 0.7:
+            for x, y in blob_pair[0].pixels:
                 # Highlight in red
                 processed_img[y, x] = [255, 0, 0]  # RGB Red
 
