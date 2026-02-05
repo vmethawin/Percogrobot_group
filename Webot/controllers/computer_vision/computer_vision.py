@@ -77,7 +77,7 @@ def contains_pixels(blob, array):
     
     # Calculate percentage
     percentage = (count / len(blob.pixels)) * 100
-    return percentage > 25
+    return percentage > 15
 
 # --- Main Loop ---
 while robot.step(timestep) != -1:

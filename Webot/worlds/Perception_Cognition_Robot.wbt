@@ -3,12 +3,13 @@
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/BakelitePlastic.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/apartment_structure/protos/Wall.proto"
 
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.15987752956377202 0.5197544951764769 -0.8392225213162661 0.837899136221389
-  position -0.9356142278341895 0.9577812903987604 0.8547862460323665
+  orientation -0.3883648573962586 0.9198613274083465 0.05502613813578666 0.7997888552667027
+  position -1.7367348893665744 0.2880355655873515 1.3400511880702013
 }
 Background {
   skyColor [
@@ -23,12 +24,6 @@ RectangleArena {
   }
 }
 E-puck {
-  hidden position_0_0 1.515003116469328e-08
-  hidden position_0_1 7.716340017186334e-08
-  hidden translation_1 0 0.026000000000000006 0.02
-  hidden rotation_1 0 1 0 0
-  hidden translation_2 0 -0.026000000000000002 0.02
-  hidden rotation_2 0 1 0 7.884953353001448e-08
   translation -0.019855700016198716 -4.560240432026511e-11 -6.396199577943414e-05
   rotation 0.7391445416447258 0.06870145165966125 0.6700339223477147 6.664894577793497e-09
   controller "computer_vision"
@@ -58,7 +53,7 @@ DEF Goal Solid {
 Solid {
   translation 0.37 0.06 0.07
   children [
-    Shape {
+    DEF ball1 Shape {
       appearance PBRAppearance {
         baseColor 0 0 1
       }
@@ -68,4 +63,23 @@ Solid {
     }
   ]
   name "solid(1)"
+  boundingObject USE ball1
+  physics Physics {
+  }
+}
+Wall {
+  translation -0.28 0 0
+  size 0.01 0.3 0.1
+}
+Wall {
+  translation 0.08 -0.31 0
+  rotation 0 0 1 -1.5707953071795862
+  name "wall(1)"
+  size 0.01 0.3 0.1
+}
+Wall {
+  translation 0.0799995 0.32 0
+  rotation 0 0 1 -1.5707953071795862
+  name "wall(2)"
+  size 0.01 0.3 0.1
 }
