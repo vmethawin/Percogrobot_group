@@ -100,11 +100,17 @@ while robot.step(timestep) != -1:
         map_grid[py-1:py+1, px-1:px+1] = [255, 0, 0]
         
     # Process LiDAR
+    # Filter out data when robot is tilted (prevents floor hits)
+    is_flat = True
+    if rpy and (abs(rpy[0]) > 0.0001 or abs(rpy[1]) > 0.0047):
+        print(f"Robot is tilted (roll: {rpy[0]}, pitch: {rpy[1]}), skipping LiDAR mapping to avoid floor hits.")
+        is_flat = False
+
     range_image = lidar.getRangeImage()
-    if range_image:
+    if range_image and is_flat:
         num_points = len(range_image)
         for i, distance in enumerate(range_image):
-            if 0.1 < distance < lidar.getMaxRange():
+            if 0.12 < distance < lidar.getMaxRange():
                 # Adjusted angle calculation based on robot heading
                 # beam_angle matches chat log logic
                 beam_angle = angle_rad - (i * 2 * math.pi / num_points) + math.pi
