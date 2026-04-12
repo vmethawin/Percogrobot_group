@@ -12,7 +12,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
-  position 1.0207632491642895e-17 -3.2664423973257265e-16 5.8842995053693326
+  position -3.605831429862446e-06 -3.6058416250505013e-06 7.8372497858178996
 }
 TexturedBackground {
 }
@@ -30,7 +30,7 @@ TurtleBot3Burger {
   hidden position2_0_2 -1.771428933516642
   hidden position3_0_2 1.4797471047571922
   hidden rotation_10 0 -1 0 1.3581384166443222
-  hidden rotation_11 -0.7781557780570882 2.4693936697110426e-07 -0.6280713216477145 3.1415880262815303
+  hidden rotation_11 -0.7781557780570882 2.469393669710097e-07 -0.6280713216477145 3.1415880262815303
   hidden rotation_12 0.44474859353800417 -0.667449054112046 -0.5972524162453443 1.8433191183152742
   rotation 0 0 1 0
   controller "easy_slam"
@@ -47,46 +47,46 @@ TurtleBot3Burger {
   ]
 }
 Wall {
-  translation -0.75 -0.51 0
-  size 0.1 0.5 0.25
+  translation -0.87 -0.38 0
+  size 0.1 0.7 0.25
 }
 Wall {
-  translation -0.4 -0.21 0
+  translation -0.45 -0.38 0
   rotation 0 0 1 1.5708
   name "wall(1)"
-  size 0.1 0.8 0.25
+  size 0.1 0.9 0.25
 }
 Wall {
-  translation -0.4 0.69 0
+  translation -0.5 0.9 0
   rotation 0 0 1 1.5708
   name "wall(5)"
-  size 0.1 0.8 0.25
+  size 0.1 1 0.25
 }
 Wall {
-  translation -0.4 0.24 0
+  translation -0.37 0.0399999 0
   rotation 0 0 -1 -5.307179586466759e-06
   name "wall(2)"
-  size 0.1 0.8 0.25
+  size 0.1 0.9 0.25
 }
 Wall {
-  translation 0.49 -0.15 0
+  translation 0.62 -0.12 0
   rotation 0 0 -1 -5.307179586466759e-06
   name "wall(4)"
-  size 0.1 1.2 0.25
+  size 0.1 1.25 0.25
 }
 Wall {
-  translation 0.01 -1.08 0
+  translation 0.14 -0.98 0
   rotation 0 0 -1 -5.307179586466759e-06
   name "wall(6)"
-  size 0.1 0.3 0.25
+  size 0.1 0.45 0.25
 }
 Wall {
-  translation -0.8 0.24 0
+  translation -0.8 0.37 0
   rotation 0 0 1 1.5708
   name "wall(3)"
   size 0.1 0.9 0.25
 }
 CardboardBox {
-  translation 0.7 0.84 0.11
+  translation 0.62 0.87 0.11
   size 0.2 0.2 0.2
 }
