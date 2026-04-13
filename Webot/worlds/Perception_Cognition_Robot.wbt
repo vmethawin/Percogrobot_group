@@ -24,15 +24,19 @@ RectangleArena {
   }
 }
 E-puck {
-  translation -0.019855700016198716 -4.560240432026511e-11 -6.396199577943414e-05
-  rotation 0.7391445416447258 0.06870145165966125 0.6700339223477147 6.664894577793497e-09
+  hidden position_0_0 -3.100593382043826e-08
+  hidden position_0_1 3.1005906094754475e-08
+  hidden rotation_1 0 -1 0 2.9802322387695313e-08
+  hidden rotation_2 0 1 0 2.9802322387695313e-08
+  translation -0.019855700016198755 -4.5601094352188406e-11 -6.395228054665615e-05
+  rotation 0.6611293869317633 0.16404213307126944 0.732118919515579 1.1156856815134445e-08
   controller "computer_vision"
-  camera_width 100
-  camera_height 75
+  camera_width 80
+  camera_height 60
   turretSlot [
     Display {
-      width 100
-      height 75
+      width 80
+      height 60
     }
   ]
 }
@@ -51,7 +55,7 @@ DEF Goal Solid {
   ]
 }
 Solid {
-  translation 0.37 0.06 0.07
+  translation 0.37 0.06 0.029822482422153313
   children [
     DEF ball1 Shape {
       appearance PBRAppearance {

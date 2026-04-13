@@ -1,22 +1,11 @@
 from controller import Robot, Display
 from Basic_Pixel_Processing import gray_scale, gaussian_blur, edge_detection, hysteresis, normalize
-from Blob import blobize, histogram_distance
+from Blob import blobize
+from optical_flow import optical_flow
 import numpy as np
 from PIL import Image
 import time
 
-# Load in the goal
-goal_image = Image.open("goal.jpg") # Open the image file
-goal_array = np.array(goal_image)
-
-# Find the blob of the goal
-gray_goal = gray_scale(goal_array, method='luminosity') # Convert to Grayscale
-blurred_goal = gaussian_blur(gray_goal) # Apply Gaussian Blur
-edges_goal = edge_detection(blurred_goal) # Perform Edge Detection
-normalized_goal = normalize(edges_goal) # Normalize edges to range 0-255 for hysteresis
-hysteresis_goal = hysteresis(normalized_goal, weak=30, strong=100) # Apply Hysteresis Thresholding
-
-goal_blob = blobize(goal_array,hysteresis_goal)[1]
 
 # Initialize Robot
 robot = Robot()
@@ -36,6 +25,7 @@ print("Vision system started...")
 k1 = 1
 k2 = 1
 k3 = 1
+MOVING_FLOW_THRESHOLD = 0.4
 
 # --- Setup ---
 # Wait for the first simulation step to get camera data
@@ -98,42 +88,19 @@ while robot.step(timestep) != -1:
     hysteresis_current_frame = hysteresis(normalized_current_frame, weak=30, strong=100) # Apply Hysteresis Thresholding
     current_frame_blobs = blobize(current_frame_arr,hysteresis_current_frame)
     
-    # --- Compare Blobs ---
-    Blobs = []
-    for i, blob in enumerate(current_frame_blobs):
-        best_distance = float('inf')
-        best_match = -1
-        for j, other_blob in enumerate(prev_frame_blobs):       
-            # The normalization now happens automatically inside the distance function
-            hc_distance = histogram_distance(blob.color_histogram, other_blob.color_histogram)
-            hog_distance = histogram_distance(blob.hog_descriptor, other_blob.hog_descriptor)
-            center_distance = np.sqrt((blob.center[0]-other_blob.center[0])**2 + (blob.center[1]-other_blob.center[1])**2)
-            total_distance = k1*hc_distance + k2*hog_distance + k3*center_distance
-            if total_distance < best_distance:
-                best_distance = total_distance
-                best_match = j
-        # print(f"Blob {i+1} in frame 1 is Blob {best_match+1} in frame 2")
-        Blobs.append((blob, prev_frame_blobs[best_match]))
 
-    # --- Compare Frames ---
-    diff_array = np.abs(blurred_current_frame - blurred_prev_frame) # Background Subtraction
-    diff_array = normalize(diff_array) # Normalize to range 0-255
-    thresholded_diff_array = hysteresis(diff_array, weak=30, strong=100)
+    # --- Optical Flow ---
+    flow = optical_flow(gray_prev_frame, gray_current_frame, window_size=[3,5], max_flow=5)
 
-    # --- Highlight Moving Blobs and Goal ---
     processed_img = current_frame_arr.copy()
-    for i, blob_pair in enumerate(Blobs):
-        hc_distance = histogram_distance(blob_pair[0].color_histogram, goal_blob.color_histogram)
-        hog_distance = histogram_distance(blob_pair[0].hog_descriptor, goal_blob.hog_descriptor)
-        if hc_distance + hog_distance < 1:
-            # print(f"Blob {i+1} is goal")
-            for x, y in blob_pair[0].pixels:
-                # Highlight in green
-                processed_img[y, x] = [0, 255, 0]  # RGB Green
-        elif contains_pixels(blob_pair[0],thresholded_diff_array) and contains_pixels(blob_pair[1],thresholded_diff_array) and np.sqrt((blob_pair[0].center[0]-blob_pair[1].center[0])**2 + (blob_pair[0].center[1]-blob_pair[1].center[1])**2) > 0.7:
-            for x, y in blob_pair[0].pixels:
-                # Highlight in red
-                processed_img[y, x] = [255, 0, 0]  # RGB Red
+
+    for blob in current_frame_blobs:
+        blob.update_flow_from_field(flow)
+        if np.hypot(blob.avg_u, blob.avg_v) > MOVING_FLOW_THRESHOLD:
+            for x, y in blob.pixels:
+                if 0 <= x < width and 0 <= y < height:
+                    processed_img[y, x] = [255, 0, 0]
+    
 
     # --- Update Previous Frame ---
     gray_prev_frame = gray_current_frame
