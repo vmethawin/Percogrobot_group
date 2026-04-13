@@ -5,7 +5,7 @@ import numpy as np
 WHEEL_RADIUS = 0.033
 WHEEL_BASE = 0.16
 Magnitude = 10
-CELL_SIZE = 0.5 * Magnitude         # Distance between vertices (0.1m)
+CELL_SIZE = 0.5 / Magnitude         # Distance between vertices (0.1m)
 MAP_CELLS = 20 * Magnitude            # 40 cells * 0.1m = 20m x 20m map
 OFFSET = MAP_CELLS // 2   # Center at index (20, 20)
 
