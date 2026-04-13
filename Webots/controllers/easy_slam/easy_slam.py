@@ -1,149 +1,161 @@
 from controller import Robot, Keyboard
-import math
 import numpy as np
+import math
+import matplotlib.pyplot as plt
+import collections
+from matplotlib.colors import ListedColormap
+import Basic_  
 
-# TurtleBot3 Burger in Webots parameters:
-wheel_radius = 0.033
-wheel_base = 0.16
+print("[INIT] Starting WASD Manual Exploration...")
 
 robot = Robot()
-
 timestep = int(robot.getBasicTimeStep())
 
-kb = Keyboard()
-kb.enable(timestep)
-
-# Initialize motors
+# --- Device Initialization ---
 left_motor = robot.getDevice('left wheel motor')
 right_motor = robot.getDevice('right wheel motor')
 left_motor.setPosition(float('inf'))
 right_motor.setPosition(float('inf'))
 
-# Initialize Position Sensors
 left_ps = robot.getDevice('left wheel sensor')
 left_ps.enable(timestep)
 right_ps = robot.getDevice('right wheel sensor')
 right_ps.enable(timestep)
 
-# Initialize LiDAR
-lidar = robot.getDevice("LDS-01")
+lidar = robot.getDevice("SickLms291") 
+if lidar is None:
+    lidar = robot.getDevice("LDS-01")
 lidar.enable(timestep)
 lidar.enablePointCloud()
 
-# Initialize IMU
 inertial_unit = robot.getDevice("inertial unit")
 inertial_unit.enable(timestep)
 
-# Initialize Odometry State
-world_x = 0.0
-world_y = 0.0
-# The IMU provides absolute orientation, so 'angle_rad' becomes the current absolute heading.
-# If we want odometry relative to start, we'd enable that, but here we can just use the IMU directly.
-angle_rad = 0.0 
-left_ps_last = 0.0
-right_ps_last = 0.0
+# Enable Keyboard
+keyboard = robot.getKeyboard()
+keyboard.enable(timestep)
+
+# --- Predetermined Grid Initialization ---
+world_x, world_y, angle_rad = 0.0, 0.0, 0.0 
+left_ps_last, right_ps_last = 0.0, 0.0
 first_step = True
 
-# Setup Display
-display = robot.getDevice("display")
+# Logical grid representing our predetermined 0.5m vertices
+# All start as UNEXPLORED (0)
+grid_graph = np.zeros((Basic_.MAP_CELLS, Basic_.MAP_CELLS), dtype=np.uint8)
 
-# Setup Map
-map_grid = np.zeros((250,250,3),dtype=np.uint8)
+# ==========================================
+# --- LIVE MATPLOTLIB SETUP ---
+# ==========================================
+print("[INIT] Building Predetermined Grid Visualization...")
+plt.ion() 
+fig, ax = plt.subplots(figsize=(8, 8))
 
-# Mapping Parameters
-scale = 100
-offset = 250 // 2
+# Define colors for our Vertices: 0=Gray (Unexplored), 1=Cyan (Explored), 2=Black (Blocked)
+cmap = ListedColormap(['gray', 'cyan', 'black'])
 
+# Visualize the vertices as a grid of points
+img_plot = ax.imshow(grid_graph, cmap=cmap, origin='upper', vmin=0, vmax=2)
+
+# Create a grid appearance for the "Edges"
+ax.set_xticks(np.arange(-0.5, Basic_.MAP_CELLS, 1), minor=True)
+ax.set_yticks(np.arange(-0.5, Basic_.MAP_CELLS, 1), minor=True)
+ax.grid(which="minor", color="white", linestyle='-', linewidth=0.5, alpha=0.3)
+ax.tick_params(which="minor", size=0)
+
+robot_plot, = ax.plot([], [], 'go', markersize=10, label='Robot Location')
+bfs_path_plot, = ax.plot([], [], 'y-', linewidth=2.5, label='BFS Suggested Path')
+
+plt.title("WASD Control + Predetermined Grid (0.5m Edges)")
+plt.legend(loc="upper right")
+plt.tight_layout()
+plt.show(block=False) 
+
+loop_counter = 0
+
+def bfs_suggest_path(grid, start_x, start_y):
+    """Runs BFS through EXPLORED edges to find the nearest UNEXPLORED vertex."""
+    if not (0 <= start_x < Basic_.MAP_CELLS and 0 <= start_y < Basic_.MAP_CELLS):
+        return []
+        
+    queue = collections.deque([(start_x, start_y, [])])
+    visited = set([(start_x, start_y)])
+    
+    while queue:
+        cx, cy, path = queue.popleft()
+        
+        # Traverse along edges (up, down, left, right)
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = cx + dx, cy + dy
+            if 0 <= nx < Basic_.MAP_CELLS and 0 <= ny < Basic_.MAP_CELLS:
+                if grid[ny, nx] == Basic_.UNEXPLORED:
+                    return path + [(nx, ny)]  # Found frontier!
+                elif grid[ny, nx] == Basic_.EXPLORED and (nx, ny) not in visited:
+                    visited.add((nx, ny))
+                    queue.append((nx, ny, path + [(nx, ny)]))
+    return []
+
+# --- Main Loop ---
 while robot.step(timestep) != -1:
     if first_step:
-        left_ps_last = left_ps.getValue()
-        right_ps_last = right_ps.getValue()
+        left_ps_last, right_ps_last = left_ps.getValue(), right_ps.getValue()
         first_step = False
         continue
 
-    # --- Odometry (Forward Kinematics) ---
-    left_ps_current = left_ps.getValue()
-    right_ps_current = right_ps.getValue()
-
-    dl = (left_ps_current - left_ps_last) * wheel_radius
-    dr = (right_ps_current - right_ps_last) * wheel_radius
-
-    left_ps_last = left_ps_current
-    right_ps_last = right_ps_current
-
-    dist = (dl + dr) / 2.0
-    
-    # Use IMU for orientation to fix drift
+    # 1. Sensors & Odometry
+    left_ps_current, right_ps_current = left_ps.getValue(), right_ps.getValue()
     rpy = inertial_unit.getRollPitchYaw()
-    # If the IMU is valid, use it. Otherwise, fallback to encoder integration (d_theta)
-    if rpy is not None:
-        angle_rad = rpy[2] # Yaw
-    else:
-         d_theta = (dr - dl) / wheel_base
-         angle_rad += d_theta
+    range_image = lidar.getRangeImage()
 
-    # Update Position using the corrected heading
+    dist, angle_rad = Basic_.update_odometry(
+        left_ps_current, right_ps_current, left_ps_last, right_ps_last, rpy, angle_rad
+    )
+    left_ps_last, right_ps_last = left_ps_current, right_ps_current
+
     world_x += dist * math.cos(angle_rad)
     world_y += dist * math.sin(angle_rad)
     
-    # Normalize Angle
-    angle_rad = (angle_rad + math.pi) % (2 * math.pi) - math.pi
+    # Current grid position
+    rx, ry = Basic_.get_grid_coords(world_x, world_y)
+
+    # 2. Update Grid Vertices (Mark Lidar pass-throughs as EXPLORED)
+    grid_graph = Basic_.process_lidar_grid(
+        grid_graph, range_image, lidar.getMaxRange(), world_x, world_y, angle_rad
+    )
     
-    print(f"POS: X={world_x:.2f} Y={world_y:.2f} | HEADING: {math.degrees(angle_rad):.1f}°")
+    # 3. WASD Keyboard Control
+    key = keyboard.getKey()
+    l_speed, r_speed = 0.0, 0.0
     
-    # --- Mapping ---
-    px = int(world_x * scale) + offset
-    py = offset - int(world_y * scale)
-    
-    # Mark Robot
-    if 1 <= px < 250-1 and 1 <= py < 250-1:
-        map_grid[py-1:py+1, px-1:px+1] = [255, 0, 0]
+    if key == ord('W') or key == ord('w'):
+        l_speed, r_speed = 6.0, 6.0
+    elif key == ord('S') or key == ord('s'):
+        l_speed, r_speed = -6.0, -6.0
+    elif key == ord('A') or key == ord('a'):
+        l_speed, r_speed = -3.0, 3.0
+    elif key == ord('D') or key == ord('d'):
+        l_speed, r_speed = 3.0, -3.0
+
+    left_motor.setVelocity(l_speed)
+    right_motor.setVelocity(r_speed)
+
+    # 4. Live Graph Update
+    loop_counter += 1
+    if loop_counter % 15 == 0:
+        # Update colors on the grid
+        img_plot.set_data(grid_graph)
         
-    # Process LiDAR
-    # Filter out data when robot is tilted (prevents floor hits)
-    is_flat = True
-    if rpy and (abs(rpy[0]) > 0.0001 or abs(rpy[1]) > 0.0047):
-        print(f"Robot is tilted (roll: {rpy[0]}, pitch: {rpy[1]}), skipping LiDAR mapping to avoid floor hits.")
-        is_flat = False
-
-    range_image = lidar.getRangeImage()
-    if range_image and is_flat:
-        num_points = len(range_image)
-        for i, distance in enumerate(range_image):
-            if 0.12 < distance < lidar.getMaxRange():
-                # Adjusted angle calculation based on robot heading
-                # beam_angle matches chat log logic
-                beam_angle = angle_rad - (i * 2 * math.pi / num_points) + math.pi
-                
-                wx = world_x + distance * math.cos(beam_angle)
-                wy = world_y + distance * math.sin(beam_angle)
-                
-                mx = int(wx * scale) + offset
-                my = offset - int(wy * scale)
-                
-                if 0 <= mx < 250 and 0 <= my < 250:
-                    map_grid[my, mx] = [255, 255, 255] # White walls
-                    
-    # Display
-    map_data = map_grid.astype(np.uint8).tobytes()
-    ir = display.imageNew(map_data, display.RGB, 250, 250)
-    display.imagePaste(ir, 0, 0, False)
-    display.imageDelete(ir)
-
-    # Movement
-    key = kb.getKey()
-    if key == Keyboard.UP:
-        left_motor.setVelocity(5.0)
-        right_motor.setVelocity(5.0)
-    elif key == Keyboard.DOWN:
-        left_motor.setVelocity(-5.0)
-        right_motor.setVelocity(-5.0)
-    elif key == Keyboard.LEFT:
-        left_motor.setVelocity(-5.0)
-        right_motor.setVelocity(5.0)
-    elif key == Keyboard.RIGHT:
-        left_motor.setVelocity(5.0)
-        right_motor.setVelocity(-5.0)
-    else:
-        left_motor.setVelocity(0)
-        right_motor.setVelocity(0)
+        # Draw Robot
+        robot_plot.set_data([rx], [ry])
+        
+        # Run BFS to draw the path to the next logical goal
+        suggested_path = bfs_suggest_path(grid_graph, rx, ry)
+        if suggested_path:
+            path_x = [rx] + [p[0] for p in suggested_path]
+            path_y = [ry] + [p[1] for p in suggested_path]
+            bfs_path_plot.set_data(path_x, path_y)
+        else:
+            bfs_path_plot.set_data([], [])
+            
+        fig.canvas.draw()
+        fig.canvas.flush_events()
