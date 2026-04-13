@@ -4,8 +4,9 @@ import numpy as np
 # --- 0.5m Fixed Grid Constants ---
 WHEEL_RADIUS = 0.033
 WHEEL_BASE = 0.16
-CELL_SIZE = 0.5           # Distance between vertices (0.5m)
-MAP_CELLS = 20            # 40 cells * 0.5m = 20m x 20m map
+Magnitude = 10
+CELL_SIZE = 0.5 * Magnitude         # Distance between vertices (0.1m)
+MAP_CELLS = 20 * Magnitude            # 40 cells * 0.1m = 20m x 20m map
 OFFSET = MAP_CELLS // 2   # Center at index (20, 20)
 
 # Vertex States
