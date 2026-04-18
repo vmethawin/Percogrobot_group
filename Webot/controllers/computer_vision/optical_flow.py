@@ -1,64 +1,21 @@
 import numpy as np
 
-def solve_lucas_kanade(Ix, Iy, It, x, y, window_size=3):
-    """
-    Solves for velocity (u, v) at pixel (x, y) by breaking down the matrix operations.
-
-    Parameters:
-    Ix (ndarray): Gradient of the first image in the x direction.
-    Iy (ndarray): Gradient of the first image in the y direction.
-    It (ndarray): Temporal gradient between the first and second images.
-    x (int): x-coordinate of the pixel.
-    y (int): y-coordinate of the pixel.
-    window_size (int): Size of the window to consider around the pixel.
-
-    Returns:
-    u, v (ndarray): Optical flow components in the x and y directions at the specified pixel.
-    """
-    # Calculate the gradients within the window
-    window_radius = window_size // 2
-    Ix_window = Ix[y - window_radius:y + window_radius + 1, x - window_radius:x + window_radius + 1].flatten()
-    Iy_window = Iy[y - window_radius:y + window_radius + 1, x - window_radius:x + window_radius + 1].flatten()
-    It_window = It[y - window_radius:y + window_radius + 1, x - window_radius:x + window_radius + 1].flatten()
-
-    if len(Ix_window) == 0: 
-        return 0, 0
-    
-    # Construct the A matrix
-    A = np.vstack((Ix_window, Iy_window)).T
-
-    # Construct the b vector
-    b = -It_window.reshape(-1, 1)
-
-    # Compute A^T * A
-    AtA = A.T @ A
-
-    # Compute A^T * b
-    Atb = A.T @ b
-    
-    # Compute the eigenvalues of AtA (structure tensor)
-    eigenvalues = np.linalg.eigvals(AtA)
-
-    l1 = eigenvalues.max()
-    l2 = eigenvalues.min()
-    
-    if l2 < 1e-2:
-        return 0, 0
-    
-    if l1 / l2 > 20:
-        return 0, 0
-    
-    # Compute the inverse of A^T * A
-    AtA_inv = np.linalg.pinv(AtA)
-
-    # Compute the velocity vector [u, v]
-    velocity = AtA_inv @ Atb
-    u, v = velocity.flatten()
-    return u, v
+def _box_sum(image: np.ndarray, size: int) -> np.ndarray:
+    """Compute sum over a square window for every pixel using integral images."""
+    radius = size // 2
+    padded = np.pad(image, ((radius, radius), (radius, radius)), mode='edge')
+    integral = np.pad(padded, ((1, 0), (1, 0)), mode='constant').cumsum(axis=0).cumsum(axis=1)
+    return (
+        integral[size:, size:]
+        - integral[:-size, size:]
+        - integral[size:, :-size]
+        + integral[:-size, :-size]
+    )
 
 
 def get_derivatives(img1, img2):
-    # Calculate gradients
+    img1 = img1.astype(np.float32, copy=False)
+    img2 = img2.astype(np.float32, copy=False)
     Iy, Ix = np.gradient(img1)
     It = img2 - img1
     return Ix, Iy, It
@@ -75,26 +32,71 @@ def optical_flow(frame1, frame2, window_size=[3], max_flow=5):
     Returns:
     flow (ndarray): Optical flow vectors for each pixel.
     """
+    if isinstance(window_size, int):
+        window_sizes = [window_size]
+    else:
+        window_sizes = [int(size) for size in window_size if int(size) > 1 and int(size) % 2 == 1]
+
+    if not window_sizes:
+        window_sizes = [3]
+
     height, width = frame1.shape
-    flows = []
 
-    # Get derivatives
     Ix, Iy, It = get_derivatives(frame1, frame2)
+    Ixx = Ix * Ix
+    Ixy = Ix * Iy
+    Iyy = Iy * Iy
+    Ixt = Ix * It
+    Iyt = Iy * It
 
-    # Compute optical flow for each pixel
-    for size in window_size:
-        flow = np.zeros((height, width, 2))  # Initialize flow array
-        for y in range(size // 2, height - size // 2):
-            for x in range(size // 2, width - size // 2):
-                u, v = solve_lucas_kanade(Ix, Iy, It, x, y, size)
-                flow[y, x] = [u, v]
-        # Apply flow magnitude constraint
-        flow_magnitude = np.linalg.norm(flow, axis=2)
-        flow[flow_magnitude > max_flow] = 0
-        flows.append(flow.copy())
+    flow_sum = np.zeros((height, width, 2), dtype=np.float32)
+    valid_size_count = 0
+    eps = 1e-6
 
-    # compute the average flow across different window sizes
-    average_flow = np.mean(flows, axis=0)
+    for size in window_sizes:
+        Sxx = _box_sum(Ixx, size)
+        Sxy = _box_sum(Ixy, size)
+        Syy = _box_sum(Iyy, size)
+        Sxt = _box_sum(Ixt, size)
+        Syt = _box_sum(Iyt, size)
 
+        b0 = -Sxt
+        b1 = -Syt
 
-    return average_flow
+        det = (Sxx * Syy) - (Sxy * Sxy)
+        trace = Sxx + Syy
+        discriminant = np.maximum((trace * trace) - (4.0 * det), 0.0)
+        sqrt_disc = np.sqrt(discriminant)
+
+        l1 = 0.5 * (trace + sqrt_disc)
+        l2 = 0.5 * (trace - sqrt_disc)
+        condition = l1 / (l2 + eps)
+
+        valid = (det > eps) & (l2 >= 1e-2) & (condition <= 20.0)
+
+        radius = size // 2
+        if radius > 0:
+            valid[:radius, :] = False
+            valid[-radius:, :] = False
+            valid[:, :radius] = False
+            valid[:, -radius:] = False
+
+        u = np.zeros((height, width), dtype=np.float32)
+        v = np.zeros((height, width), dtype=np.float32)
+
+        u[valid] = (Syy[valid] * b0[valid] - Sxy[valid] * b1[valid]) / det[valid]
+        v[valid] = (-Sxy[valid] * b0[valid] + Sxx[valid] * b1[valid]) / det[valid]
+
+        flow_magnitude = np.sqrt((u * u) + (v * v))
+        keep = flow_magnitude <= max_flow
+        u[~keep] = 0.0
+        v[~keep] = 0.0
+
+        flow_sum[:, :, 0] += u
+        flow_sum[:, :, 1] += v
+        valid_size_count += 1
+
+    if valid_size_count == 0:
+        return np.zeros((height, width, 2), dtype=np.float32)
+
+    return flow_sum / float(valid_size_count)

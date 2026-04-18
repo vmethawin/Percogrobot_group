@@ -6,7 +6,7 @@ maximizedDockId: -1
 centralWidgetVisible: 1
 renderingMode: PLAIN
 orthographicViewHeight: 1
-textFiles: 0 "D:/University_Works/PCR/Percogrobot_group/Webot/controllers/computer_vision/computer_vision.py"
+textFiles: 0 "controllers/computer_vision/computer_vision.py"
 consoles: Console:All:All
 renderingDevicePerspectives: e-puck:camera;1;1.75;0;0.00123305
 renderingDevicePerspectives: e-puck:display;1;4.9375;0;0.183876

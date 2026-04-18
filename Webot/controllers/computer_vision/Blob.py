@@ -1,40 +1,54 @@
 from Basic_Pixel_Processing import pipeline1
 import numpy as np
-from PIL import Image
 
 class Blob:
     def __init__(self):
         self.pixels = []
-        self.flow_vectors = []
+        self.pixels_np = None
         self.avg_u = 0.0
         self.avg_v = 0.0
     
     def add_pixel(self, x, y):
         self.pixels.append((x, y))
 
-    def add_flow(self, u, v):
-        self.flow_vectors.append((float(u), float(v)))
+    def finalize_pixels(self):
+        if self.pixels_np is None:
+            if self.pixels:
+                self.pixels_np = np.asarray(self.pixels, dtype=np.int32)
+            else:
+                self.pixels_np = np.empty((0, 2), dtype=np.int32)
 
     def update_flow_from_field(self, flow_field: np.ndarray):
-        self.flow_vectors = []
         self.avg_u = 0.0
         self.avg_v = 0.0
 
         if flow_field is None or flow_field.ndim != 3 or flow_field.shape[2] < 2:
             return
 
+        self.finalize_pixels()
+        if self.pixels_np is None or self.pixels_np.size == 0:
+            return
+
         height, width = flow_field.shape[:2]
+        coords = self.pixels_np
+        valid = (
+            (coords[:, 0] >= 0)
+            & (coords[:, 0] < width)
+            & (coords[:, 1] >= 0)
+            & (coords[:, 1] < height)
+        )
+        if not np.any(valid):
+            return
 
-        for x, y in self.pixels:
-            if 0 <= x < width and 0 <= y < height:
-                u, v = flow_field[y, x]
-                if u != 0 or v != 0:
-                    self.add_flow(u, v)
+        coords = coords[valid]
+        sampled = flow_field[coords[:, 1], coords[:, 0], :2]
+        non_zero = (sampled[:, 0] != 0) | (sampled[:, 1] != 0)
+        if not np.any(non_zero):
+            return
 
-        if self.flow_vectors:
-            flow_array = np.array(self.flow_vectors)
-            self.avg_u = float(np.mean(flow_array[:, 0]))
-            self.avg_v = float(np.mean(flow_array[:, 1]))
+        sampled = sampled[non_zero]
+        self.avg_u = float(np.mean(sampled[:, 0]))
+        self.avg_v = float(np.mean(sampled[:, 1]))
 
     
 def blobize(img_array: np.ndarray, edge_array: np.ndarray | None = None) -> list:
@@ -43,64 +57,43 @@ def blobize(img_array: np.ndarray, edge_array: np.ndarray | None = None) -> list
     if edge_array is None:
         edge_array = pipeline1(img_array)
 
-    # Track which pixels have been assigned to blobs
-    assigned = np.zeros((height, width), dtype=bool)
+    if edge_array.ndim == 2:
+        non_edge = edge_array != 255
+    else:
+        non_edge = np.any(edge_array != 255, axis=2)
+
+    assigned = np.zeros((height, width), dtype=np.bool_)
+    min_blob_pixels = max(1, int(height * width * 0.001))
     blobs = []
-    
-    def is_edge(x, y):
-        """Check if pixel is an edge (white pixel in binary image)"""
-        if len(edge_array.shape) == 2:
-            return edge_array[y, x] == 255
-    
-    def assign_to_blob(start_x, start_y):
-        """Assign a pixel to a new blob using iterative flood fill"""
-        # If already assigned to a blob, return
-        if assigned[start_y, start_x]:
-            return
-        
-        # If is an edge, return
-        if is_edge(start_x, start_y):
-            return
-        
-        # Create new blob
-        blob = Blob()
-        
-        # Use stack for iterative flood fill instead of recursion
-        stack = [(start_x, start_y)]
-        
-        while stack:
-            x, y = stack.pop()
-            
-            # Check bounds
-            if x < 0 or x >= width or y < 0 or y >= height:
-                continue
-            
-            # If already assigned, skip
-            if assigned[y, x]:
-                continue
-            
-            # If is an edge, skip
-            if is_edge(x, y):
-                continue
-            
-            # Mark as assigned and add to blob
-            assigned[y, x] = True
-            blob.add_pixel(x, y)
-            
-            # Add neighboring pixels to stack
-            stack.append((x - 1, y))  # left
-            stack.append((x + 1, y))  # right
-            stack.append((x, y - 1))  # up
-            stack.append((x, y + 1))  # down
-        
-        # Only add blob if it has pixels
-        if len(blob.pixels) > height * width * 0.001:  # Minimum size threshold (0.1% of image)
-            blobs.append(blob)
-    
-    # For each pixel in frame
+
     for y in range(height):
         for x in range(width):
-            assign_to_blob(x, y)
+            if assigned[y, x] or not non_edge[y, x]:
+                continue
+
+            stack = [(x, y)]
+            pixels = []
+
+            while stack:
+                cx, cy = stack.pop()
+                if cx < 0 or cx >= width or cy < 0 or cy >= height:
+                    continue
+                if assigned[cy, cx] or not non_edge[cy, cx]:
+                    continue
+
+                assigned[cy, cx] = True
+                pixels.append((cx, cy))
+
+                stack.append((cx - 1, cy))
+                stack.append((cx + 1, cy))
+                stack.append((cx, cy - 1))
+                stack.append((cx, cy + 1))
+
+            if len(pixels) > min_blob_pixels:
+                blob = Blob()
+                blob.pixels = pixels
+                blob.finalize_pixels()
+                blobs.append(blob)
     
     return blobs
 

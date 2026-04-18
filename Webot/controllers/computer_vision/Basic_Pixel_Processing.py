@@ -3,18 +3,25 @@ from PIL import Image
 import os
 
 def convolution(image, kernel):
+    image = image.astype(np.float32, copy=False)
+    kernel = kernel.astype(np.float32, copy=False)
     k_height, k_width = kernel.shape
     i_height, i_width = image.shape
     pad_height = k_height // 2
     pad_width = k_width // 2
     padded_image = np.pad(image, ((pad_height, pad_height), (pad_width, pad_width)), mode='edge')
-    # Use float64 to avoid overflow/underflow during calculations
-    convolved_image = np.zeros((i_height, i_width), dtype=np.float64)
-    for i in range(i_height):
-        for j in range(i_width):
-            region = padded_image[i:i + k_height, j:j + k_width]
-            convolved_image[i, j] = np.sum(region * kernel)
-    return convolved_image
+    windows = np.lib.stride_tricks.as_strided(
+        padded_image,
+        shape=(i_height, i_width, k_height, k_width),
+        strides=(
+            padded_image.strides[0],
+            padded_image.strides[1],
+            padded_image.strides[0],
+            padded_image.strides[1],
+        ),
+        writeable=False,
+    )
+    return np.einsum('ijkl,kl->ij', windows, kernel, optimize=True)
 
 def gaussian_blur(image):
     gaussian_kernel = np.array([
@@ -40,7 +47,9 @@ def gray_scale(image, method='luminosity'):
             saturation = max_val - min_val
             return saturation.astype(np.uint8)
         elif method == 'luminosity':
-            return np.dot(image[..., :3], [0.299, 0.587, 0.114])
+            weights = np.array([0.299, 0.587, 0.114], dtype=np.float32)
+            rgb = image[..., :3].astype(np.float32, copy=False)
+            return np.tensordot(rgb, weights, axes=([-1], [0]))
     else:
         return image
 

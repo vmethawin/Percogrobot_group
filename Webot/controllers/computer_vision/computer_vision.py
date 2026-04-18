@@ -22,11 +22,7 @@ display = robot.getDevice("display")
 
 print("Vision system started...")
 
-k1 = 1
-k2 = 1
-k3 = 1
-MOVING_FLOW_THRESHOLD = 0.4
-
+MOVING_FLOW_THRESHOLD = 0.2
 # --- Setup ---
 # Wait for the first simulation step to get camera data
 robot.step(timestep)
@@ -49,10 +45,6 @@ normalized_prev_frame = normalize(edges_prev_frame) # Normalize edges to range 0
 hysteresis_prev_frame = hysteresis(normalized_prev_frame, weak=30, strong=100) # Apply Hysteresis Thresholding
 
 prev_frame_blobs = blobize(prev_frame_arr,hysteresis_prev_frame)
-
-# Maintain ~30 FPS
-if time.time() - t < 1/30:
-    time.sleep((1/30) - (time.time() - t))
 
 def contains_pixels(blob, array):
     if not blob.pixels:
@@ -90,7 +82,7 @@ while robot.step(timestep) != -1:
     
 
     # --- Optical Flow ---
-    flow = optical_flow(gray_prev_frame, gray_current_frame, window_size=[3,5], max_flow=5)
+    flow = optical_flow(gray_prev_frame, gray_current_frame, window_size=[7,9,12], max_flow=5)
 
     processed_img = current_frame_arr.copy()
 
