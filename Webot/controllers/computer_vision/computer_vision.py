@@ -5,24 +5,52 @@ from optical_flow import optical_flow
 import numpy as np
 from PIL import Image
 import time
+import math
 
 
 # Initialize Robot
 robot = Robot()
 timestep = int(robot.getBasicTimeStep())
+wheel_radius = 0.033
+
+# Initialize motors
+left_motor = robot.getDevice('left wheel motor')
+right_motor = robot.getDevice('right wheel motor')
+
+# Setup Position Sensor
+left_ps = robot.getDevice("left wheel sensor")
+right_ps = robot.getDevice("right wheel sensor")
+left_ps.enable(timestep)
+right_ps.enable(timestep)
+left_ps_last = 0.0
+right_ps_last = 0.0
+first_step = True
+
+# Setup imu
+imu = robot.getDevice("inertial unit")
+imu.enable(timestep)
+
+# Setup gyro
+gyro = robot.getDevice("gyro")
+gyro.enable(timestep)
 
 # Setup Camera
 camera = robot.getDevice("camera")
 camera.enable(timestep)
 width = camera.getWidth()
 height = camera.getHeight()
+fov = camera.getFov()
+
+f_x = width / (2.0 * math.tan(fov / 2.0))
+f_y = height / (2.0 * math.tan(fov / 2.0))
+
 
 # Setup Display
 display = robot.getDevice("display")
 
 print("Vision system started...")
 
-MOVING_FLOW_THRESHOLD = 0.2
+MOVING_FLOW_THRESHOLD = 0.5
 # --- Setup ---
 # Wait for the first simulation step to get camera data
 robot.step(timestep)
@@ -61,8 +89,35 @@ def contains_pixels(blob, array):
     percentage = (count / len(blob.pixels)) * 100
     return percentage > 1
 
+# get initial simulation time
+prev_time = robot.getTime()
+
 # --- Main Loop ---
 while robot.step(timestep) != -1:
+
+    # calculate time delta
+    current_time = robot.getTime()
+    dt = current_time - prev_time
+    prev_time = current_time
+
+    # Obtain initial wheel encoder values
+    if first_step:
+        left_ps_last = left_ps.getValue()
+        right_ps_last = right_ps.getValue()
+        first_step = False
+        continue
+
+    left_ps_current = left_ps.getValue()
+    right_ps_current = right_ps.getValue()
+    
+    dl = (left_ps_current - left_ps_last)
+    dr = (right_ps_current - right_ps_last)
+
+    vx = (dl + dr) * wheel_radius / (2 * dt)
+
+    # obtain wz from gyro
+    current_rz_velocity = gyro.getValues()[2]
+
     # --- Capture ---
     raw_image = camera.getImage()
     
