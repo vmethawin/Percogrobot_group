@@ -4,13 +4,14 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/BakelitePlastic.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/apartment_structure/protos/Wall.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/robotis/turtlebot/protos/TurtleBot3Burger.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotis/protos/RobotisLds01.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/sick/protos/SickLms291.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/RoughConcrete.proto"
 
 WorldInfo {
 }
 Viewpoint {
-  orientation 0.1251928144137552 0.556688851310713 -0.8212333907273388 0.777894204630252
-  position -0.7849580366467672 0.8514803765571259 0.5679391815303114
+  orientation 0.17097089227110104 0.3660835077841791 -0.9147413947802155 1.8218475305407902
+  position 0.45381274852573755 0.9727553768723091 0.776729750525326
 }
 Background {
   skyColor [
@@ -20,16 +21,15 @@ Background {
 RectangleArena {
   floorAppearance BakelitePlastic {
   }
-  wallHeight 0.2
+  wallHeight 0.3
   wallAppearance BakelitePlastic {
   }
 }
 DEF Goal Solid {
-  translation 0.38 -0.08 0.05
+  translation 0.38 -0.07 0.17
   children [
     Shape {
-      appearance PBRAppearance {
-        metalness 0
+      appearance RoughConcrete {
       }
       geometry Cone {
         bottomRadius 0.05
@@ -39,7 +39,7 @@ DEF Goal Solid {
   ]
 }
 Solid {
-  translation 0.37 0.06 0.02982248244909987
+  translation 0.37 0.06 0.029822482422153303
   children [
     DEF ball1 Shape {
       appearance PBRAppearance {
@@ -54,7 +54,7 @@ Solid {
   boundingObject USE ball1
   physics Physics {
   }
-  linearVelocity 0 0 -2.1075294569981533e-10
+  linearVelocity 0 0 4.012224999353821e-17
 }
 Wall {
   translation -0.28 0 0
@@ -73,27 +73,27 @@ Wall {
   size 0.01 0.3 0.1
 }
 TurtleBot3Burger {
-  hidden position_0_0 -2.8936742595571265e-11
-  hidden position_0_1 -1.931668083285561e-11
-  hidden position_0_2 1.0374728131241991e-06
-  hidden position2_0_2 0.0002183084066151246
-  hidden position3_0_2 -3.2745915590710754e-07
-  hidden rotation_11 0 -1 0 1.5707960000289367
-  hidden rotation_13 0.004752103688753557 0.9999875845078133 -0.0014994468181430542 0.00021831111484821972
-  translation 4.913087783831038e-10 -5.211121760885853e-10 -0.0002477392027697839
-  rotation -0.0021116495661126305 -0.999997770454266 4.75468475705068e-06 0.00464194681795789
+  hidden position_0_0 -5.827116350824623e-14
+  hidden position_0_1 -1.2036091193237298e-13
+  hidden position_0_2 -6.807067898035507e-07
+  hidden position2_0_2 0.0001532386727469964
+  hidden position3_0_2 -6.730965226983028e-09
+  hidden rotation_7 0.0003665254307800644 0.9999993787807149 -0.001052662003100883 0.00031252382564479514
+  translation 0.001779613186338208 0.00016522236459386844 -0.00020956418060117527
+  rotation -4.340737759560015e-06 -0.9999999999905598 -1.9588864556168793e-07 0.004409026808028883
   controller "computer_vision"
   extensionSlot [
+    SickLms291 {
+      name "SickLms291"
+    }
     InertialUnit {
     }
     Display {
       width 80
       height 60
     }
-    RobotisLds01 {
-    }
     Camera {
-      translation 0 0 0.03
+      translation 0.052 0 0
       width 80
       height 60
     }
