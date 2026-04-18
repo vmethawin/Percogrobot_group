@@ -7,13 +7,17 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotis/protos/RobotisLds01.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/apartment_structure/protos/Wall.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/containers/protos/CardboardBox.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/sick/protos/SickLms291.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/animals/protos/Cat.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/animals/protos/Deer.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/balls/protos/Ball.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/bathroom/protos/BathroomSink.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/apartment_structure/protos/Door.proto"
 
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.37764383318279116 0.19679758006768636 0.904796025487795 2.260411313020432
-  position 3.1659445690746426 -4.87344494016772 7.66659148446838
+  orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
+  position 1.8273001914526466e-15 -5.067197061710569e-16 9.605218871018405
 }
 TexturedBackground {
 }
@@ -25,21 +29,21 @@ RectangleArena {
   wallHeight 0.25
 }
 TurtleBot3Burger {
-  hidden position_0_0 0.8505794156267853
-  hidden position_0_1 0.8505794157175517
-  hidden position_0_2 -6.053129506150434
-  hidden position2_0_2 0.38664874395389814
-  hidden position3_0_2 4.707994841921444
-  hidden rotation_11 0 -1 0 0.7784546817599207
-  hidden rotation_12 -0.575982586531414 2.2926226723879775e-06 0.8174619624223052 3.14159344821115
-  hidden rotation_13 -0.06800044789668432 0.7924322677703266 -0.606157603336152 3.2948935403075827
-  translation 0 0 -0.0049361
-  rotation 0.0022957453164012113 -0.011921765114020651 0.9999262978189984 0
+  hidden position_0_0 95.66564058510204
+  hidden position_0_1 87.85239783674143
+  hidden position_0_2 20.966061243856334
+  hidden position2_0_2 0.6976159822969364
+  hidden position3_0_2 306.2455851311143
+  hidden linearVelocity_0 -1.7607152752212976e-15 -1.4163242806993583e-14 -9.26423156748432e-15
+  hidden angularVelocity_0 2.9333807496483e-13 -3.206970028609862e-14 1.2329452084384225e-15
+  hidden rotation_10 0 1 0 6.072012187201124
+  hidden rotation_11 -0.889016899051636 2.2160320683884378e-06 0.4578743858261812 3.1415912348912842
+  hidden rotation_12 -0.2556900417415941 0.9303166880990984 0.2629324293397579 3.0926669704636747
+  translation -0.04881456183715907 0.19373753492866191 -0.00024773920643758607
+  rotation 0.0023155475805442297 -0.0025725620487237737 0.9999940100640143 1.469954618177809
   controller "easy_slam"
+  supervisor TRUE
   extensionSlot [
-    SickLms291 {
-      rotation 0 0 1 0.261799
-    }
     InertialUnit {
     }
     Display {
@@ -112,30 +116,6 @@ Wall {
   size 0.3 3 0.4
 }
 Wall {
-  translation -1.54 -0.550022 0
-  rotation 0 0 1 -3.1415853071795863
-  name "wall(7)"
-  size 0.3 3 0.4
-}
-Wall {
-  translation -0.61 -0.550008 0
-  rotation 0 0 1 -3.1415853071795863
-  name "wall(8)"
-  size 0.3 3 0.4
-}
-Wall {
-  translation 1.79 2.55001 0
-  rotation 3.52253e-14 -9.58979e-09 1 -3.1415853071795863
-  name "wall(15)"
-  size 0.3 3 0.4
-}
-Wall {
-  translation -0.610012 1.56999 0
-  rotation 0 0 1 -3.1415853071795863
-  name "wall(12)"
-  size 0.3 3 0.4
-}
-Wall {
   translation 0.880002 -1.06001 0
   rotation 0 0 1 1.5708
   name "wall(9)"
@@ -156,4 +136,24 @@ Wall {
 CardboardBox {
   translation 0.62 0.87 0.11
   size 0.3 0.2 0.2
+}
+Cat {
+  translation 0.8 0 0
+}
+BathroomSink {
+  translation -3.5 0 0.05
+}
+Door {
+  hidden translation_5 0.0012110036495085463 6.613704305713508e-05 1.3322676295501878e-15
+  hidden rotation_5 0 0 -1 0.00044418727900973114
+  translation 0.5 2.31 0
+  position -0.00044418727878412585
+}
+Deer {
+  translation -1.4 0 0
+}
+Shape {
+}
+Ball {
+  translation 0 2.66 0.03241368534238262
 }
