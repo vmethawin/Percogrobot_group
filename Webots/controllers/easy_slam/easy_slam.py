@@ -126,26 +126,123 @@ def estimate_forward_depth(point_cloud):
         return float(np.median(forward_pts))
     return 1.0
 
-def estimate_ego_flow(vx, wz, depth_z, dt, u_grid, v_grid, fx, fy, height, width):
-    depth_z = max(float(depth_z), 0.10)
-    u_dot = (-(vx * fx) / depth_z) + (wz * v_grid)
-    translation_v = np.zeros_like(v_grid, dtype=np.float32)
-    valid_u = np.abs(u_grid) >= 1.0
-    translation_v[valid_u] = (-(vx * fy * v_grid[valid_u]) / (depth_z * u_grid[valid_u]))
-    v_dot = translation_v - (wz * u_grid)
+def estimate_column_depth_from_lidar(lidar_device, u_axis, fx, min_depth=0.10):
+    ranges = np.asarray(lidar_device.getRangeImage(), dtype=np.float32)
+    if ranges.size == 0:
+        return np.full(u_axis.shape, 1.0, dtype=np.float32)
+
+    max_range = float(lidar_device.getMaxRange())
+    valid = np.isfinite(ranges) & (ranges > min_depth) & (ranges < max_range)
+    if not np.any(valid):
+        return np.full(u_axis.shape, 1.0, dtype=np.float32)
+
+    idx = np.arange(ranges.size, dtype=np.float32)
+    if np.count_nonzero(valid) == 1:
+        range_filled = np.full(ranges.shape, float(ranges[valid][0]), dtype=np.float32)
+    else:
+        range_filled = np.interp(idx, idx[valid], ranges[valid]).astype(np.float32)
+
+    lidar_fov = float(lidar_device.getFov())
+    lidar_angles = np.linspace(-lidar_fov / 2.0, lidar_fov / 2.0, ranges.size, dtype=np.float32)
+
+    # Camera horizontal ray angle alpha follows y/x = -u/fx in robot frame.
+    pixel_angles = -np.arctan2(u_axis, float(fx)).astype(np.float32)
+    clipped_angles = np.clip(pixel_angles, lidar_angles[0], lidar_angles[-1])
+    sampled_ranges = np.interp(clipped_angles, lidar_angles, range_filled).astype(np.float32)
+
+    depth_x_cols = sampled_ranges * np.cos(pixel_angles)
+    return np.maximum(depth_x_cols, min_depth)
+
+
+def estimate_blob_depth_x(blob, depth_x_cols, depth_percentile=15.0):
+    blob.finalize_pixels()
+    if blob.pixels_np is None or blob.pixels_np.size == 0:
+        return float(np.percentile(depth_x_cols, depth_percentile))
+
+    xs = blob.pixels_np[:, 0]
+    valid = (xs >= 0) & (xs < depth_x_cols.shape[0])
+    if not np.any(valid):
+        return float(np.percentile(depth_x_cols, depth_percentile))
+
+    return float(np.percentile(depth_x_cols[xs[valid]], depth_percentile))
+
+
+def estimate_ego_flow(vx, wz, depth_x_cols, dt, u_grid, v_grid, fx, fy, height, width):
+    depth_x = np.maximum(depth_x_cols[np.newaxis, :], 0.10)
+
+    # Yaw-flow model for a forward-facing pinhole camera (x-forward in robot frame).
+    fx_safe = max(float(fx), 1e-6)
+    u_dot = (vx / depth_x) * u_grid + wz * (fx_safe + (u_grid * u_grid) / fx_safe)
+    v_dot = (vx / depth_x) * v_grid + wz * ((u_grid * v_grid) / fx_safe)
 
     ego_flow = np.zeros((height, width, 2), dtype=np.float32)
     ego_flow[:, :, 0] = u_dot * dt
     ego_flow[:, :, 1] = v_dot * dt
     return ego_flow
 
+
+def estimate_ego_scale(observed_flow, predicted_flow, min_pred_mag=0.10, scale_min=0.01, scale_max=0.05):
+    pred_u = predicted_flow[:, :, 0]
+    pred_v = predicted_flow[:, :, 1]
+    pred_mag = np.hypot(pred_u, pred_v)
+    valid = pred_mag > min_pred_mag
+    if not np.any(valid):
+        return 1.0
+
+    obs_u = observed_flow[:, :, 0]
+    obs_v = observed_flow[:, :, 1]
+    dot = (obs_u * pred_u) + (obs_v * pred_v)
+    denom = (pred_u * pred_u) + (pred_v * pred_v) + 1e-6
+
+    ratios = dot[valid] / denom[valid]
+    ratios = ratios[np.isfinite(ratios)]
+    if ratios.size == 0:
+        return 1.0
+
+    low, high = np.percentile(ratios, [10.0, 90.0])
+    inliers = ratios[(ratios >= low) & (ratios <= high)]
+    if inliers.size == 0:
+        inliers = ratios
+
+    return float(np.clip(np.median(inliers), scale_min, scale_max))
+
+
+def compensation_cost(observed_flow, predicted_flow, min_pred_mag=0.10):
+    residual = observed_flow - predicted_flow
+    residual_mag = np.hypot(residual[:, :, 0], residual[:, :, 1])
+
+    pred_mag = np.hypot(predicted_flow[:, :, 0], predicted_flow[:, :, 1])
+    valid = pred_mag > min_pred_mag
+    if np.any(valid):
+        return float(np.percentile(residual_mag[valid], 45.0))
+    return float(np.percentile(residual_mag, 45.0))
+
+
+def estimate_best_ego_flow(observed_flow, vx, wz, depth_x_cols, dt, u_grid, v_grid, fx, fy, height, width):
+    ego_plus = estimate_ego_flow(vx, wz, depth_x_cols, dt, u_grid, v_grid, fx, fy, height, width)
+    ego_minus = estimate_ego_flow(vx, -wz, depth_x_cols, dt, u_grid, v_grid, fx, fy, height, width)
+
+    scale_plus = estimate_ego_scale(observed_flow, ego_plus)
+    scale_minus = estimate_ego_scale(observed_flow, ego_minus)
+    pred_plus = ego_plus * scale_plus
+    pred_minus = ego_minus * scale_minus
+
+    cost_plus = compensation_cost(observed_flow, pred_plus)
+    cost_minus = compensation_cost(observed_flow, pred_minus)
+
+    if cost_plus <= cost_minus:
+        return pred_plus, 1.0, scale_plus
+    return pred_minus, -1.0, scale_minus
+
 # --- 4. Initialization ---
 robot = Supervisor()
 TIME_STEP = int(robot.getBasicTimeStep())
 WHEEL_RADIUS = 0.033
-MATCH_THRESHOLD = 0.5 
+MATCH_THRESHOLD = 0.35
 MOVING_FLOW_THRESHOLD = 0.25
-MAX_COMPENSATED_FLOW = 5.0
+MAX_COMPENSATED_FLOW = 100.0
+DISTANCE_REF_DEPTH = 2.0
+DISTANCE_SPEED_MAX_GAIN = 1.1
 
 keyboard = robot.getKeyboard()
 keyboard.enable(TIME_STEP)
@@ -182,6 +279,12 @@ f_x = width / (2.0 * math.tan(fov / 2.0))
 f_y = height / (2.0 * math.tan(fov / 2.0))
 
 display = robot.getDevice("display")
+edge_display = robot.getDevice("edge")
+edge_width = width
+edge_height = height
+if edge_display:
+    edge_width = edge_display.getWidth()
+    edge_height = edge_display.getHeight()
 
 # Graph Variables
 pose_nodes = [PoseNode(0, 0.0, 0.0, 0.0)]
@@ -210,11 +313,13 @@ prev_frame_arr = img_arr[:, :, :3][:, :, ::-1]
 gray_prev_frame = gray_scale(prev_frame_arr, method='luminosity')
 prev_time = robot.getTime()
 first_step = True
+frame_index = 0
 
 print("=== Visual-GraphSLAM Started ===")
 
 # --- 5. Main Loop ---
 while robot.step(TIME_STEP) != -1:
+    frame_index += 1
     current_time = robot.getTime()
     dt = current_time - prev_time
     prev_time = current_time
@@ -254,33 +359,87 @@ while robot.step(TIME_STEP) != -1:
     
     blurred_current = gaussian_blur(gray_current_frame)
     edges_current = edge_detection(blurred_current)
-    hysteresis_current = hysteresis(normalize(edges_current), weak=30, strong=100)
+    hysteresis_current = hysteresis(normalize(edges_current), weak=10, strong=20)
     current_frame_blobs = blobize(current_frame_arr, hysteresis_current)
 
     point_cloud = lidar.getPointCloud()
-    depth_z = estimate_forward_depth(point_cloud)
+    depth_x_cols = estimate_column_depth_from_lidar(lidar, u_axis, f_x)
 
     flow = optical_flow(gray_prev_frame, gray_current_frame, window_size=[7,9,12], max_flow=5)
-    ego_flow = estimate_ego_flow(vx, current_rz_velocity, depth_z, dt, u_grid, v_grid, f_x, f_y, height, width)
+    ego_flow, yaw_sign, ego_scale = estimate_best_ego_flow(
+        flow,
+        vx,
+        current_rz_velocity,
+        depth_x_cols,
+        dt,
+        u_grid,
+        v_grid,
+        f_x,
+        f_y,
+        height,
+        width,
+    )
     compensated_flow = flow - ego_flow
     np.clip(compensated_flow, -MAX_COMPENSATED_FLOW, MAX_COMPENSATED_FLOW, out=compensated_flow)
 
     processed_img = current_frame_arr.copy()
     moving_pixels = set()
+    blob_stats = []
 
-    for blob in current_frame_blobs:
+    for blob_idx, blob in enumerate(current_frame_blobs):
         blob.update_flow_from_field(compensated_flow)
-        if np.hypot(blob.avg_u, blob.avg_v) > MOVING_FLOW_THRESHOLD:
+        blob_speed = float(np.hypot(blob.avg_u, blob.avg_v))
+        blob_depth_x = estimate_blob_depth_x(blob, depth_x_cols)
+        depth_gain = np.clip(
+            math.sqrt(blob_depth_x / DISTANCE_REF_DEPTH),
+            1.0,
+            DISTANCE_SPEED_MAX_GAIN,
+        )
+        boosted_speed = blob_speed * float(depth_gain)
+
+        blob_stats.append((blob_idx, boosted_speed, blob_depth_x))
+        if boosted_speed > MOVING_FLOW_THRESHOLD:
             for x, y in blob.pixels:
                 moving_pixels.add((x, y))
                 if 0 <= x < width and 0 <= y < height:
                     processed_img[y, x] = [255, 0, 0] # Highlight moving pixels in Red
+
+    fast_blobs = [b for b in blob_stats if b[1] > MOVING_FLOW_THRESHOLD]
+    if fast_blobs:
+        speeds_text = ", ".join(
+            f"blob_{idx}: speed={speed:.3f}, depth={depth:.3f}"
+            for idx, speed, depth in fast_blobs
+        )
+    elif blob_stats:
+        fastest_idx, fastest_speed, fastest_depth = max(blob_stats, key=lambda b: b[1])
+        speeds_text = (
+            f"fastest blob_{fastest_idx}: speed={fastest_speed:.3f}, depth={fastest_depth:.3f}"
+        )
+    else:
+        speeds_text = "none"
+    print(
+        f"[Frame {frame_index}] blobs: {len(current_frame_blobs)} | "
+        f"yaw_sign: {yaw_sign:+.0f} | ego_scale: {ego_scale:.2f} | "
+        f"avg speed (px/frame): {speeds_text}"
+    )
 
     # Update Webots Display
     img_data = processed_img.astype(np.uint8).tobytes()
     ir = display.imageNew(img_data, Display.RGB, width, height)
     display.imagePaste(ir, 0, 0, False)
     display.imageDelete(ir)
+
+    if edge_display:
+        edge_frame = hysteresis_current.astype(np.uint8, copy=False)
+        if edge_frame.shape[0] != edge_height or edge_frame.shape[1] != edge_width:
+            y_idx = np.linspace(0, edge_frame.shape[0] - 1, edge_height).astype(np.int32)
+            x_idx = np.linspace(0, edge_frame.shape[1] - 1, edge_width).astype(np.int32)
+            edge_frame = edge_frame[np.ix_(y_idx, x_idx)]
+        edge_rgb = np.repeat(edge_frame[:, :, np.newaxis], 3, axis=2)
+        edge_data = edge_rgb.tobytes()
+        edge_ir = edge_display.imageNew(edge_data, Display.RGB, edge_width, edge_height)
+        edge_display.imagePaste(edge_ir, 0, 0, False)
+        edge_display.imageDelete(edge_ir)
 
     gray_prev_frame = gray_current_frame
 

@@ -126,14 +126,10 @@ def estimate_forward_depth(lidar_device):
 def estimate_ego_flow(vx, wz, depth_z, dt, u_grid, v_grid, fx, fy):
     depth_z = max(float(depth_z), MIN_DEPTH_METERS)
 
-    u_dot = (-(vx * fx) / depth_z) + (wz * v_grid)
-
-    translation_v = np.zeros_like(v_grid, dtype=np.float32)
-    valid_u = np.abs(u_grid) >= 1.0
-    translation_v[valid_u] = (
-        -(vx * fy * v_grid[valid_u]) / (depth_z * u_grid[valid_u])
-    )
-    v_dot = translation_v - (wz * u_grid)
+    # Yaw-flow model for a forward-facing pinhole camera (x-forward in robot frame).
+    fx_safe = max(float(fx), 1e-6)
+    u_dot = (vx / depth_z) * u_grid + wz * (fx_safe + (u_grid * u_grid) / fx_safe)
+    v_dot = (vx / depth_z) * v_grid + wz * ((u_grid * v_grid) / fx_safe)
 
     ego_flow = np.zeros((height, width, 2), dtype=np.float32)
     ego_flow[:, :, 0] = u_dot * dt
