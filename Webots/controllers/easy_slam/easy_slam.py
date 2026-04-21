@@ -270,7 +270,7 @@ if not lidar:
 lidar.enable(TIME_STEP)
 lidar.enablePointCloud() 
 
-camera = robot.getDevice("camera")
+camera = robot.getDevice("cameraN")
 camera.enable(TIME_STEP)
 width = camera.getWidth()
 height = camera.getHeight()
@@ -278,7 +278,7 @@ fov = camera.getFov()
 f_x = width / (2.0 * math.tan(fov / 2.0))
 f_y = height / (2.0 * math.tan(fov / 2.0))
 
-display = robot.getDevice("display")
+display = robot.getDevice("displayN")
 edge_display = robot.getDevice("edge")
 edge_width = width
 edge_height = height

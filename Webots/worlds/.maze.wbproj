@@ -10,5 +10,11 @@ renderingMode: PLAIN
 orthographicViewHeight: 1
 textFiles: -1
 consoles: Console:All:All
-renderingDevicePerspectives: TurtleBot3Burger:camera;0;1.06667;0;0
-renderingDevicePerspectives: TurtleBot3Burger:display;1;1.06667;0;0
+renderingDevicePerspectives: TurtleBot3Burger:cameraE;1;1.6;0;0.164438
+renderingDevicePerspectives: TurtleBot3Burger:cameraN;0;1.6;0;0
+renderingDevicePerspectives: TurtleBot3Burger:cameraS;1;1.6;0;0.104278
+renderingDevicePerspectives: TurtleBot3Burger:cameraW;1;1.6;0;0.052139
+renderingDevicePerspectives: TurtleBot3Burger:displayE;1;3.2;0;0.045455
+renderingDevicePerspectives: TurtleBot3Burger:displayN;1;1.6;0;0
+renderingDevicePerspectives: TurtleBot3Burger:displayS;1;3.2;0;0.1377
+renderingDevicePerspectives: TurtleBot3Burger:displayW;1;3.2;0;0.0909088
