@@ -10,5 +10,8 @@ renderingMode: PLAIN
 orthographicViewHeight: 1
 textFiles: 0 "../../../../../Applications/Webots.app/Contents/projects/robots/parallax/boebot/controllers/boebot/boebot.c"
 consoles: Console:All:All
+renderingDevicePerspectives: TurtleBot3Burger:back camera;1;1;0;0
 renderingDevicePerspectives: TurtleBot3Burger:camera;1;1.71875;0;0
 renderingDevicePerspectives: TurtleBot3Burger:display;1;1.6875;0.248815;0
+renderingDevicePerspectives: TurtleBot3Burger:left camera;1;1;0;0
+renderingDevicePerspectives: TurtleBot3Burger:right camera;1;1;0;0
