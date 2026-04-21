@@ -1,18 +1,14 @@
 """
-Integrated Visual-GraphSLAM Controller for Webots
+Autonomous Visualized GraphSLAM Controller for Webots (TurtleBot3 LDS-01)
 Features:
-- Graph-based SLAM (Nodes & Edges) for infinite map expansion.
-- Optical Flow + Blob detection for dynamic object masking.
-- Lidar-to-Camera projection to reject moving objects as landmarks.
-- Real-time Matplotlib SLAM Visualization & Webots CV Display.
+- WASD manual driving
+- IMU + Encoder Odometry with continuous frame accumulation
+- Supervisor Ground Truth Tracking (Orange Dashed Line)
+- Automated Landmark Extraction & Iterative Graph Optimization
+- Real-time Matplotlib Visualization
 """
 
-from controller import Supervisor, Display, Keyboard
-from Basic_Pixel_Processing import gray_scale, gaussian_blur, edge_detection, hysteresis, normalize
-from Blob import blobize
-from optical_flow import optical_flow
-import numpy as np
-import time
+from controller import Supervisor, Keyboard
 import math
 import matplotlib.pyplot as plt
 
@@ -48,44 +44,112 @@ class MeasurementEdge:
 # --- 2. Matplotlib Visualization Setup ---
 plt.ion() 
 fig, ax = plt.subplots(figsize=(8, 8))
-fig.canvas.manager.set_window_title('Dynamic-Object Aware GraphSLAM')
+fig.canvas.manager.set_window_title('GraphSLAM Live Map vs Ground Truth')
 
 def draw_graph(poses, landmarks, odom_edges, meas_edges, true_traj):
+    """Draws the SLAM graph alongside the Supervisor Ground Truth."""
     ax.clear()
-    ax.set_title("Live GraphSLAM (Dynamic Objects Ignored)")
+    ax.set_title("Live GraphSLAM vs Actual Position")
     ax.set_xlabel("X (meters)")
     ax.set_ylabel("Y (meters)")
     ax.grid(True, linestyle='--', alpha=0.6)
 
+    # Draw Ground Truth Trajectory (Supervisor)
     if true_traj:
-        tx, ty = [p[0] for p in true_traj], [p[1] for p in true_traj]
-        ax.plot(tx, ty, color='orange', linestyle='--', linewidth=3, alpha=0.8, label="Ground Truth")
+        tx = [p[0] for p in true_traj]
+        ty = [p[1] for p in true_traj]
+        ax.plot(tx, ty, color='orange', linestyle='--', linewidth=3, alpha=0.8, label="Actual Path (Ground Truth)")
 
+    # Draw Odometry Edges (SLAM Estimated Path)
     for edge in odom_edges:
-        p1, p2 = poses[edge.from_id], poses[edge.to_id]
+        p1 = poses[edge.from_id]
+        p2 = poses[edge.to_id]
         ax.plot([p1.x, p2.x], [p1.y, p2.y], color='blue', linestyle='-', alpha=0.4)
 
+    # Draw Measurement Edges (Landmark Sightings)
     for edge in meas_edges:
-        p, lm = poses[edge.pose_id], landmarks[edge.landmark_id]
+        p = poses[edge.pose_id]
+        lm = landmarks[edge.landmark_id]
         ax.plot([p.x, lm.x], [p.y, lm.y], color='green', linestyle=':', alpha=0.4)
 
+    # Draw SLAM Pose Nodes
     if poses:
-        px, py = [p.x for p in poses], [p.y for p in poses]
-        ax.scatter(px, py, color='blue', s=10, label="Estimated Path")
-        ax.scatter(poses[-1].x, poses[-1].y, color='black', s=50, marker='o')
+        px = [p.x for p in poses]
+        py = [p.y for p in poses]
+        ax.scatter(px, py, color='blue', s=10, label="SLAM Estimated Nodes")
+        ax.scatter(poses[-1].x, poses[-1].y, color='black', s=50, marker='o', label="Estimated Robot Pose")
 
+    # Draw Landmark Nodes
     if landmarks:
-        lx, ly = [lm.x for lm in landmarks], [lm.y for lm in landmarks]
-        ax.scatter(lx, ly, color='red', s=100, marker='*', label="Static Landmarks")
+        lx = [lm.x for lm in landmarks]
+        ly = [lm.y for lm in landmarks]
+        ax.scatter(lx, ly, color='red', s=100, marker='*', label="Mapped Landmarks")
 
     ax.legend(loc='upper right')
     ax.axis('equal') 
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-# --- 3. SLAM Optimization ---
+# --- 3. Robot & Supervisor Initialization ---
+TIME_STEP = 64
+WHEEL_RADIUS = 0.033
+WHEEL_BASE = 0.16
+MATCH_THRESHOLD = 0.5 
+
+LINEAR_CORRECTION = 1.00  
+ANGULAR_CORRECTION = 1.00 
+
+# Change: Use Supervisor instead of Robot
+robot = Supervisor()
+keyboard = robot.getKeyboard()
+keyboard.enable(TIME_STEP)
+
+# Change: Get God-Mode reference to self
+robot_node = robot.getSelf()
+if robot_node is None:
+    print("CRITICAL ERROR: 'supervisor' field in the Webots Scene Tree is set to FALSE!")
+    print("Please set it to TRUE, save, and reload the world.")
+
+left_motor = robot.getDevice('left wheel motor')
+right_motor = robot.getDevice('right wheel motor')
+left_motor.setPosition(float('inf'))
+right_motor.setPosition(float('inf'))
+left_motor.setVelocity(0.0)
+right_motor.setVelocity(0.0)
+
+left_ps = robot.getDevice('left wheel sensor')
+right_ps = robot.getDevice('right wheel sensor')
+left_ps.enable(TIME_STEP)
+right_ps.enable(TIME_STEP)
+
+inertial_unit = robot.getDevice('inertial unit')
+if inertial_unit: 
+    inertial_unit.enable(TIME_STEP)
+
+lidar = robot.getDevice('LDS-01')
+if lidar:
+    lidar.enable(TIME_STEP)
+    lidar.enablePointCloud() 
+
+# Graph & Tracking State Initialization
+pose_nodes = [PoseNode(0, 0.0, 0.0, 0.0)]
+landmark_nodes = []
+odom_edges = []
+meas_edges = []
+true_trajectory = [] # New: Array to hold ground truth coordinates
+
+pose_id_counter = 1
+landmark_id_counter = 0
+first_step = True
+
+left_ps_last, right_ps_last = 0.0, 0.0
+accumulated_dist = 0.0
+world_x, world_y = 0.0, 0.0
+
+# --- 4. Graph Optimization ---
 def optimize_graph(poses, landmarks, o_edges, m_edges, iterations=10):
     for _ in range(iterations):
+        # Odometry Optimization
         for edge in o_edges:
             p_from, p_to = poses[edge.from_id], poses[edge.to_id]
             exp_x = p_from.x + (edge.dx * math.cos(p_from.theta))
@@ -105,6 +169,7 @@ def optimize_graph(poses, landmarks, o_edges, m_edges, iterations=10):
             p_to.y += err_y * 0.05
             p_to.theta += err_theta * 0.05       
 
+        # Measurement Optimization
         for edge in m_edges:
             pose, lm = poses[edge.pose_id], landmarks[edge.landmark_id]
             exp_lm_x = pose.x + (edge.local_x * math.cos(pose.theta) - edge.local_y * math.sin(pose.theta))
@@ -118,177 +183,55 @@ def optimize_graph(poses, landmarks, o_edges, m_edges, iterations=10):
             lm.x += err_x * 0.1
             lm.y += err_y * 0.1
 
-# --- CV Helper Functions ---
-def estimate_forward_depth(point_cloud):
-    # Extracts median forward depth from lidar point cloud
-    forward_pts = [p.x for p in point_cloud if not math.isinf(p.x) and abs(p.y) < 0.2 and p.x > 0.1]
-    if forward_pts:
-        return float(np.median(forward_pts))
-    return 1.0
-
-def estimate_ego_flow(vx, wz, depth_z, dt, u_grid, v_grid, fx, fy, height, width):
-    depth_z = max(float(depth_z), 0.10)
-    u_dot = (-(vx * fx) / depth_z) + (wz * v_grid)
-    translation_v = np.zeros_like(v_grid, dtype=np.float32)
-    valid_u = np.abs(u_grid) >= 1.0
-    translation_v[valid_u] = (-(vx * fy * v_grid[valid_u]) / (depth_z * u_grid[valid_u]))
-    v_dot = translation_v - (wz * u_grid)
-
-    ego_flow = np.zeros((height, width, 2), dtype=np.float32)
-    ego_flow[:, :, 0] = u_dot * dt
-    ego_flow[:, :, 1] = v_dot * dt
-    return ego_flow
-
-# --- 4. Initialization ---
-robot = Supervisor()
-TIME_STEP = int(robot.getBasicTimeStep())
-WHEEL_RADIUS = 0.033
-MATCH_THRESHOLD = 0.5 
-MOVING_FLOW_THRESHOLD = 0.25
-MAX_COMPENSATED_FLOW = 5.0
-
-keyboard = robot.getKeyboard()
-keyboard.enable(TIME_STEP)
-
-robot_node = robot.getSelf()
-
-left_motor = robot.getDevice('left wheel motor')
-right_motor = robot.getDevice('right wheel motor')
-left_motor.setPosition(float('inf'))
-right_motor.setPosition(float('inf'))
-
-left_ps = robot.getDevice('left wheel sensor')
-right_ps = robot.getDevice('right wheel sensor')
-left_ps.enable(TIME_STEP)
-right_ps.enable(TIME_STEP)
-
-inertial_unit = robot.getDevice('inertial unit')
-gyro = robot.getDevice('gyro')
-inertial_unit.enable(TIME_STEP)
-gyro.enable(TIME_STEP)
-
-lidar = robot.getDevice('LDS-01')
-if not lidar:
-    lidar = robot.getDevice('SickLms291') # Fallback
-lidar.enable(TIME_STEP)
-lidar.enablePointCloud() 
-
-camera = robot.getDevice("camera")
-camera.enable(TIME_STEP)
-width = camera.getWidth()
-height = camera.getHeight()
-fov = camera.getFov()
-f_x = width / (2.0 * math.tan(fov / 2.0))
-f_y = height / (2.0 * math.tan(fov / 2.0))
-
-display = robot.getDevice("display")
-
-# Graph Variables
-pose_nodes = [PoseNode(0, 0.0, 0.0, 0.0)]
-landmark_nodes = []
-odom_edges = []
-meas_edges = []
-true_trajectory = []
-pose_id_counter = 1
-landmark_id_counter = 0
-
-# Odometry Variables
-left_ps_last, right_ps_last = 0.0, 0.0
-accumulated_dist = 0.0
-world_x, world_y = 0.0, 0.0
-
-# CV Grid setup
-u_axis = np.arange(width, dtype=np.float32) - ((width - 1) / 2.0)
-v_axis = np.arange(height, dtype=np.float32) - ((height - 1) / 2.0)
-u_grid, v_grid = np.meshgrid(u_axis, v_axis)
-
-# Initialize CV First Frame
-robot.step(TIME_STEP)
-raw_image = camera.getImage()
-img_arr = np.frombuffer(raw_image, dtype=np.uint8).reshape((height, width, 4))
-prev_frame_arr = img_arr[:, :, :3][:, :, ::-1]
-gray_prev_frame = gray_scale(prev_frame_arr, method='luminosity')
-prev_time = robot.getTime()
-first_step = True
-
-print("=== Visual-GraphSLAM Started ===")
+print("=== Autonomous Visualized SLAM Started ===")
+draw_graph(pose_nodes, landmark_nodes, odom_edges, meas_edges, true_trajectory)
 
 # --- 5. Main Loop ---
 while robot.step(TIME_STEP) != -1:
-    current_time = robot.getTime()
-    dt = current_time - prev_time
-    prev_time = current_time
-    if dt <= 0: continue
-
     if first_step:
         left_ps_last, right_ps_last = left_ps.getValue(), right_ps.getValue()
         first_step = False
         continue
 
-    # Ground Truth Tracking
+    # --- Fetch Ground Truth ---
     if robot_node:
         actual_pos = robot_node.getPosition()
+        # Webots floor is usually the X-Y plane
         true_trajectory.append((actual_pos[0], actual_pos[1]))
 
-    # Odometry & Kinematics
-    left_ps_curr, right_ps_curr = left_ps.getValue(), right_ps.getValue()
-    dl = (left_ps_curr - left_ps_last)
-    dr = (right_ps_curr - right_ps_last)
-    step_dist = (dl + dr) * WHEEL_RADIUS / 2.0
-    vx = step_dist / dt
+    # --- INPUT HANDLING ---
+    key = keyboard.getKey()
+    vL, vR = 0.0, 0.0
+    while key != -1:
+        if key in [ord('W'), ord('w')]: vL, vR = 4.0, 4.0
+        elif key in [ord('S'), ord('s')]: vL, vR = -4.0, -4.0
+        elif key in [ord('A'), ord('a')]: vL, vR = -2.0, 2.0
+        elif key in [ord('D'), ord('d')]: vL, vR = 2.0, -2.0
+        key = keyboard.getKey()
+        
+    left_motor.setVelocity(vL)
+    right_motor.setVelocity(vR)
 
+    # --- Continuous Odometry Calculation ---
+    left_ps_curr, right_ps_curr = left_ps.getValue(), right_ps.getValue()
+    rpy = inertial_unit.getRollPitchYaw()
+    
+    raw_step_dist = ((left_ps_curr - left_ps_last) + (right_ps_curr - right_ps_last)) * WHEEL_RADIUS / 2.0
     left_ps_last, right_ps_last = left_ps_curr, right_ps_curr
     
-    rpy = inertial_unit.getRollPitchYaw()
-    angle_rad = rpy[2]
-    current_rz_velocity = gyro.getValues()[2]
+    step_dist = raw_step_dist * LINEAR_CORRECTION
+    angle_rad = rpy[2] * ANGULAR_CORRECTION
     
     world_x += step_dist * math.cos(angle_rad)
     world_y += step_dist * math.sin(angle_rad)
-    accumulated_dist += step_dist
-
-    # Camera Capture & CV Pipeline
-    raw_image = camera.getImage()
-    current_frame_arr = np.frombuffer(raw_image, dtype=np.uint8).reshape((height, width, 4))[:, :, :3][:, :, ::-1]
-    gray_current_frame = gray_scale(current_frame_arr, method='luminosity')
     
-    blurred_current = gaussian_blur(gray_current_frame)
-    edges_current = edge_detection(blurred_current)
-    hysteresis_current = hysteresis(normalize(edges_current), weak=30, strong=100)
-    current_frame_blobs = blobize(current_frame_arr, hysteresis_current)
-
-    point_cloud = lidar.getPointCloud()
-    depth_z = estimate_forward_depth(point_cloud)
-
-    flow = optical_flow(gray_prev_frame, gray_current_frame, window_size=[7,9,12], max_flow=5)
-    ego_flow = estimate_ego_flow(vx, current_rz_velocity, depth_z, dt, u_grid, v_grid, f_x, f_y, height, width)
-    compensated_flow = flow - ego_flow
-    np.clip(compensated_flow, -MAX_COMPENSATED_FLOW, MAX_COMPENSATED_FLOW, out=compensated_flow)
-
-    processed_img = current_frame_arr.copy()
-    moving_pixels = set()
-
-    for blob in current_frame_blobs:
-        blob.update_flow_from_field(compensated_flow)
-        if np.hypot(blob.avg_u, blob.avg_v) > MOVING_FLOW_THRESHOLD:
-            for x, y in blob.pixels:
-                moving_pixels.add((x, y))
-                if 0 <= x < width and 0 <= y < height:
-                    processed_img[y, x] = [255, 0, 0] # Highlight moving pixels in Red
-
-    # Update Webots Display
-    img_data = processed_img.astype(np.uint8).tobytes()
-    ir = display.imageNew(img_data, Display.RGB, width, height)
-    display.imagePaste(ir, 0, 0, False)
-    display.imageDelete(ir)
-
-    gray_prev_frame = gray_current_frame
-
-    # --- SLAM GRAPH UPDATE ---
+    accumulated_dist += step_dist
     curr_pose = pose_nodes[-1]
     dtheta_from_last_node = angle_rad - curr_pose.theta
+    
     graph_updated = False 
 
+    # Update Graph Path 
     if abs(accumulated_dist) > 0.05 or abs(dtheta_from_last_node) > 0.05:
         new_pose = PoseNode(pose_id_counter, world_x, world_y, angle_rad)
         pose_nodes.append(new_pose)
@@ -297,80 +240,69 @@ while robot.step(TIME_STEP) != -1:
         accumulated_dist = 0.0
         graph_updated = True
 
-        # Landmark Extraction with Dynamic Object Masking
+        # DATA ASSOCIATION & LANDMARK EXTRACTION
+        # 2. DATA ASSOCIATION & LANDMARK EXTRACTION
         if abs(dtheta_from_last_node) < 0.08:
-            points = [p for p in point_cloud if not (math.isinf(p.x) or math.isinf(p.y))]
-            best_feature = None
-            min_dist = float('inf')
-            
-            step = 3
-            for i in range(step, len(points) - step):
-                p_curr = points[i]
-                d_curr = math.hypot(p_curr.x, p_curr.y)
+            if lidar:
+                point_cloud = lidar.getPointCloud()
+                best_feature = None
+                min_dist = float('inf')
                 
-                if not (0.12 < d_curr < 1.5): continue
+                # Filter out infinite points first
+                points = [p for p in point_cloud if not (math.isinf(p.x) or math.isinf(p.y))]
+                
+                # Look for 'spikes' by comparing a point to its neighbors 
+                # (using a step of 3 to skip over minor Lidar noise)
+                step = 3
+                for i in range(step, len(points) - step):
+                    p_curr = points[i]
+                    d_curr = math.hypot(p_curr.x, p_curr.y)
                     
-                d_left = math.hypot(points[i-step].x, points[i-step].y)
-                d_right = math.hypot(points[i+step].x, points[i+step].y)
-                
-                jump_left, jump_right = abs(d_curr - d_left), abs(d_curr - d_right)
-                
-                if jump_left > 0.20 or jump_right > 0.20:
-                    # PROJECTION CHECK: Is this Lidar spike inside a moving object?
-                    is_moving = False
-                    if p_curr.x > 0.01:
-                        # Project Lidar 2D local coordinate to Camera pixel 'u'
-                        u = int(width / 2.0 - (p_curr.y / p_curr.x) * f_x)
-                        if 0 <= u < width:
-                            # Check a vertical swath (since Lidar is flat but objects span height)
-                            v_center = height // 2
-                            for v in range(max(0, v_center - 30), min(height, v_center + 30)):
-                                if (u, v) in moving_pixels:
-                                    is_moving = True
-                                    break
-                    
-                    if is_moving:
-                        # Skip this landmark! It is a moving object.
+                    if not (0.12 < d_curr < 1.5):
                         continue
-
-                    if d_curr < min_dist:
-                        min_dist = d_curr
-                        best_feature = p_curr
                         
-            if best_feature:
-                current_p = pose_nodes[-1]
-                gl_x = current_p.x + (best_feature.x * math.cos(current_p.theta) - best_feature.y * math.sin(current_p.theta))
-                gl_y = current_p.y + (best_feature.x * math.sin(current_p.theta) + best_feature.y * math.cos(current_p.theta))
-                
-                matched_id = -1
-                for lm in landmark_nodes:
-                    if math.hypot(gl_x - lm.x, gl_y - lm.y) < MATCH_THRESHOLD:
-                        matched_id = lm.id
-                        break 
-                
-                if matched_id != -1:
-                    meas_edges.append(MeasurementEdge(current_p.id, matched_id, best_feature.x, best_feature.y))
-                    optimize_graph(pose_nodes, landmark_nodes, odom_edges, meas_edges)
-                    world_x, world_y = pose_nodes[-1].x, pose_nodes[-1].y
-                else:
-                    new_lm = LandmarkNode(landmark_id_counter, gl_x, gl_y)
-                    landmark_nodes.append(new_lm)
-                    meas_edges.append(MeasurementEdge(current_p.id, landmark_id_counter, best_feature.x, best_feature.y))
-                    landmark_id_counter += 1
+                    # Get distance of points a few steps to the left and right
+                    d_left = math.hypot(points[i-step].x, points[i-step].y)
+                    d_right = math.hypot(points[i+step].x, points[i+step].y)
+                    
+                    # Calculate how sharply the depth changes
+                    jump_left = abs(d_curr - d_left)
+                    jump_right = abs(d_curr - d_right)
+                    # SPIKE THRESHOLD: If depth changes by more than 20cm, it's an edge/object!
+                    if jump_left > 0.2 or jump_right > 0.2:
+                        if d_curr < min_dist:
+                            min_dist = d_curr
+                            best_feature = p_curr
+                            
+                # Rename back to closest_pt so the rest of your code works seamlessly
+                closest_pt = best_feature 
+                        
+                if closest_pt:
+                    current_p = pose_nodes[-1]
+                    
+                    gl_x = current_p.x + (closest_pt.x * math.cos(current_p.theta) - closest_pt.y * math.sin(current_p.theta))
+                    gl_y = current_p.y + (closest_pt.x * math.sin(current_p.theta) + closest_pt.y * math.cos(current_p.theta))
+                    matched_id = -1
+                    for lm in landmark_nodes:
+                        dist_to_lm = math.hypot(gl_x - lm.x, gl_y - lm.y)
+                        if dist_to_lm < MATCH_THRESHOLD:
+                            matched_id = lm.id
+                            break 
+                    
+                    if matched_id != -1:
+                        meas_edges.append(MeasurementEdge(current_p.id, matched_id, closest_pt.x, closest_pt.y))
+                        print(f"🔄 MATCH! Recognized Landmark #{matched_id}. Optimizing Graph...")
+                        optimize_graph(pose_nodes, landmark_nodes, odom_edges, meas_edges)
+                        world_x, world_y = pose_nodes[-1].x, pose_nodes[-1].y
+                        graph_updated = True
+                    else:
+                        new_lm = LandmarkNode(landmark_id_counter, gl_x, gl_y)
+                        landmark_nodes.append(new_lm)
+                        meas_edges.append(MeasurementEdge(current_p.id, landmark_id_counter, closest_pt.x, closest_pt.y))
+                        landmark_id_counter += 1
+                        graph_updated = True
 
-    # --- Draw Matplotlib Graph ---
+    # --- Render Visualization ---
+    # We update the plot every 10 steps so it catches the ground truth, or immediately on a graph update
     if graph_updated or (robot.getTime() * 1000) % 500 < TIME_STEP:
         draw_graph(pose_nodes, landmark_nodes, odom_edges, meas_edges, true_trajectory)
-
-    # --- Input Handling ---
-    key = keyboard.getKey()
-    vL, vR = 0.0, 0.0
-    while key != -1:
-        if key in [ord('W'), ord('w'), Keyboard.UP]: vL, vR = 1, 1.0
-        elif key in [ord('S'), ord('s'), Keyboard.DOWN]: vL, vR = -1.0, -1.0
-        elif key in [ord('A'), ord('a'), Keyboard.LEFT]: vL, vR = -0.2, 0.2
-        elif key in [ord('D'), ord('d'), Keyboard.RIGHT]: vL, vR = 0.2, -0.2
-        key = keyboard.getKey()
-        
-    left_motor.setVelocity(vL)
-    right_motor.setVelocity(vR)
